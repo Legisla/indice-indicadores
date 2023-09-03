@@ -371,15 +371,89 @@ class Parlamentar:
 
         return contagem
 
-nomes_de_parlamentares = ["Adriana Ventura", "Afonso Hamm"]#, "Outro Nome", "Mais Um Nome"]
+import pandas as pd
+import numpy as np
 
-# Criar objetos Parlamentar para cada nome e processar suas variáveis
-parlamentares = []
-for nome in nomes_de_parlamentares:
-    parlamentar = Parlamentar(nome)
-    parlamentar.run()
-    parlamentares.append(parlamentar)
-    print(f"Nome do Parlamentar: {parlamentar.nome}")
-    for var, data in parlamentar.variaveis.items():
-        print(f"{var}: {data['value']}")
-    print("-" * 20)  # Separator for readability
+class Legislatura:
+    def __init__(self):
+        self.lista_de_nomes = self._lista()
+        self.parlamentares = []
+
+    def _lista(self):
+        # Mock function to get a dynamic list of names
+        return ["Adriana Ventura", "Afonso Hamm", "Eduardo Bolsonaro", "Erika Hilton", "Tabata Amaral", "Kim Kataguiri"]  # You can replace this with actual logic
+
+    def _get_parlamentar(self, nome):
+        parlamentar = Parlamentar(nome)
+        parlamentar.run()
+        self.parlamentares.append(parlamentar)
+
+    def _to_df(self):
+        data = []
+        for parlamentar in self.parlamentares:
+            # Initialize a dictionary with the name of the Parlamentar
+            parlamentar_data = {"Deputado": parlamentar.nome}
+            # Add each variable and its value to the dictionary
+            for var, value_data in parlamentar.variaveis.items():
+                parlamentar_data[var] = value_data['value']  # Extract just the value
+            # Append the dictionary to the list
+            data.append(parlamentar_data)
+        # Convert the list of dictionaries to a DataFrame
+        self.dataframe = pd.DataFrame(data)
+        return self.dataframe
+
+
+    def _calculate_indicators(self):
+        for col in self.dataframe.columns[1:]:  # Skipping the "Deputado" column
+            self.dataframe[col] = pd.to_numeric(self.dataframe[col], errors='coerce')
+            self.dataframe[col + "_score"] = self._calculate_indicator(self.dataframe[col])
+            self.dataframe[col + "_stars"] = self._calculate_stars(self.dataframe[col])
+
+    @staticmethod
+    def _calculate_indicator(column):
+        Q1 = column.quantile(0.25)
+        Q3 = column.quantile(0.75)
+        IQR = Q3 - Q1
+        lower_limit = Q1 - 1.5 * IQR
+        upper_limit = Q3 + 1.5 * IQR
+        
+        # Use filtered_data just for calculating statistical parameters
+        filtered_data = column[(column >= lower_limit) & (column <= upper_limit)]
+        amplitude = filtered_data.max() - filtered_data.min()
+        count = filtered_data.count()
+        num_classes = int(np.ceil(1 + 3.332 * np.log10(count))) if count > 0 else 0
+        class_size = np.ceil(amplitude / num_classes) if num_classes > 0 else 0
+        
+        # Apply statistical parameters to the entire column
+        scores = (column - filtered_data.min()) // class_size / num_classes if class_size > 0 else 0
+        
+        return scores
+
+    @staticmethod
+    def _calculate_stars(column):
+        max_score = column.max()
+        if max_score == 0:
+            return pd.Series([0] * len(column), index=column.index)
+        interval = max_score / 5
+        stars = pd.cut(
+            column,
+            bins=[0, interval, 2 * interval + 0.01, 3 * interval + 0.01, 4 * interval + 0.01, max_score + 0.01],
+            labels=[1, 2, 3, 4, 5],
+            include_lowest=True
+        )
+        return stars
+
+    def _to_csv(self, output_path):
+        self.dataframe.to_csv(output_path, index=False)
+        print(f"Arquivo salvo em {output_path}")
+
+    def run(self, output_path):
+        for nome in self.lista_de_nomes:
+            self._get_parlamentar(nome)
+        self._to_df()
+        self._calculate_indicators()
+        self._to_csv(output_path)
+
+
+legislatura = Legislatura()
+legislatura.run("data/resultado.csv")
