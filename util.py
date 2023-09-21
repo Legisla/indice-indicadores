@@ -7,13 +7,24 @@ from io import StringIO
 from urllib.parse import parse_qs, urlparse
 from tqdm import tqdm
 from time import sleep
+import logging
+import re
+
+DEBUG = True if logging.getLogger().level == 10 else False
+
+
+def _regex_get(d, key):
+    """Obtém o valor de um dicionário usando uma correspondência de expressão regular na chave."""
+    for regex, value in d.items():
+        if re.match(regex, key):
+            return value
+    return None
 
 def cached_requests(url, params=None, cache_dir='cache_api', filetype='json', **kwargs):
     # Cria um hash da URL e parâmetros para usar como nome do arquivo de cache
     hash_object = hashlib.md5((url + str(params)).encode())
     hash_hex = hash_object.hexdigest()
     cache_path = os.path.join(cache_dir, f"{hash_hex}")
-
     # Tenta carregar do cache
     if os.path.exists(cache_path):
         with open(cache_path, 'r', encoding='utf-8') as f:
@@ -29,7 +40,7 @@ def cached_requests(url, params=None, cache_dir='cache_api', filetype='json', **
         response = requests.get(url, params=params, **kwargs)
     except:
         sleep(5)
-        print("Esta demorando um pouquinho...")
+        logging.debug("Esta demorando um pouquinho...")
         response = requests.get(url, params=params, **kwargs)
     
     # Salva no cache se a requisição for bem-sucedida
@@ -44,7 +55,7 @@ def cached_requests(url, params=None, cache_dir='cache_api', filetype='json', **
                 csv_reader = csv.DictReader(StringIO(response.text), delimiter=';')
                 return [row for row in csv_reader]
     else:
-        print(f"Erro ao acessar API: {response.status_code}")
+        logging.debug(f"Erro ao acessar API: {response.status_code}")
         return None
 
 
@@ -83,7 +94,8 @@ def _acessar_api_camara(endpoint, params=None, use_params=True):
             return initial_data['dados']
             
     # Barra de progresso e loop de requisições
-    for current_page in tqdm(range(1, total_pages + 1), desc=f"Fetching endpoint {endpoint}"):
+    loop = tqdm(range(1, total_pages + 1), desc=f"Fetching endpoint {endpoint}") if DEBUG else range(1, total_pages + 1)
+    for current_page in loop:
         url = f"{url_base}/{endpoint}"
         final_params = params if use_params else None
         data = cached_requests(url, params=final_params, filetype='json', headers={"accept": "application/json"})
