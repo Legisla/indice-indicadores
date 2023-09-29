@@ -563,23 +563,29 @@ class Legislatura:
             scores[~column.isin(filtered_data)] = 1
         else:
             # Criando os bins
-            bins = np.linspace(filtered_data.min(), filtered_data.max(), num_classes + 1)
-            #bins[0] = -np.inf
+            # Menor valor positivo sem outliers
+            min_value = filtered_data[(filtered_data > 0)].min()
+            # Maior valor sem outliers
+            max_value = filtered_data.max()
+
+            bins = np.linspace(min_value, max_value, num_classes + 1)
             bins = np.insert(bins, 0, -np.inf)
-            bins[1] = 0.0001
             bins[-1] = np.inf
 
             if reverse:
                 bins = bins[::-1]
             # Calculando as classes para todos os valores na coluna original
-            classes = np.digitize(column, bins, right=True)
+            classes = np.digitize(column, bins, right=True) - 1
+            
             # Calculando a "posição" da classe como um valor float entre 0 e 1
-            posicao_classe = (classes - 1) / (num_classes)            
+            posicao_classe = (classes) / (num_classes)            
             
             # Arredondando a "posição" da classe para duas casas decimais
             scores = np.round(posicao_classe, 2)
             if not reverse:
                 scores[zero_indices] = 0
+            if reverse:
+                scores[scores==0] = 0.1
         return scores
 
 
