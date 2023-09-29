@@ -6,7 +6,7 @@ from util import _acessar_api_camara, _acessar_api_portaltransparencia, _regex_g
 from tqdm import tqdm
 import logging
 
-logging.basicConfig(level=logging.INFO,
+logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s %(levelname)s: %(message)s',
                     handlers=[logging.FileHandler('example.log'),
                               logging.StreamHandler()])
@@ -15,7 +15,7 @@ DEBUG = True if logging.getLogger().level == 10 else False
 
 CONFIG = {
     "itens" : 500,
-    "dataInicio" : "2023-01-01",
+    "dataInicio" : "2023-02-01",
 }
 
 class Parlamentar:
@@ -71,8 +71,18 @@ class Parlamentar:
 
     
     def _buscar_projetos(self):
+        tipos_de_projetos = ['PDL', 'PEC', 'PL', 'PLP', 'PLV', #var 1,2
+                             'VTS', #var 4
+                             'SBT', #var 5
+                             'PRL', #var 6
+                             'EMP', 'EMR', #var 8
+                             'RIC', 'PFC', #var 9
+                             'PLN', #var 12
+                             'REQ' #var 15
+                             ]
         params = {
-            "autor": self.nome,
+            "idDeputadoAutor": self.pid,
+            "siglaTipo" : ",".join(tipos_de_projetos),
             "ordem": "ASC",
             "ordenarPor": "id",
             "itens": CONFIG['itens'],
@@ -81,11 +91,14 @@ class Parlamentar:
         self.projetos = _acessar_api_camara("proposicoes", params)
     
     def _buscar_eventos(self):
+        orgaos = [180]
         params = {
             "dataInicio": CONFIG["dataInicio"],
+            "idOrgao" : orgaos,
             "ordem": "ASC",
             "ordenarPor": "dataHoraInicio",
             "itens": CONFIG['itens']
+            
             }
         self.eventos = _acessar_api_camara("eventos", params)
     
@@ -256,10 +269,11 @@ class Parlamentar:
 
         # Soma da coluna Valor_pago como inteiros
         total_valor_pago = 0
-
+        if not csv_data:
+            logging.debug(csv_data)
         for row in csv_data:
-            valor_pago_str = row.get('Valor pago', '0').replace('.', '').replace(',', '')
-            valor_pago_int = int(valor_pago_str)
+            valor_pago_str = row.get('Valor pago', '0').replace('.', '').replace(',', '.')
+            valor_pago_int = float(valor_pago_str)
             total_valor_pago += valor_pago_int
 
         self.variaveis["variavel_10"] = {"value": total_valor_pago}
@@ -303,6 +317,8 @@ class Parlamentar:
         return contagem
 
     def processa_variavel_14(self):
+        logging.debug(f"Buscando dep {self.nome}")
+
         # Preparar os parâmetros para a API
         params = {
             "dataInicio": CONFIG["dataInicio"],
@@ -326,10 +342,9 @@ class Parlamentar:
         ]
 
         orgaos_filtrados = [
-            orgao for orgao in data
-            if orgao['nomeOrgao'] not in orgaos_obrigatorios
+            cargo for cargo in data
+            if cargo['nomeOrgao'] not in orgaos_obrigatorios and cargo['dataFim'] == None
         ]
-        
         # Calcular a pontuação total com base no órgão e no título
         orgaos_pontuacao = {
             r"(Mesa Diretora|Secretaria)": {
@@ -377,25 +392,32 @@ class Parlamentar:
             },
         }
 
-        pontuacao_total = 0
-        org_pts = {}
-        logging.debug(f"Buscando dep {self.nome}")
+        total_pontuacao = 0
+        pontuacoes_por_orgao = {}
         
+
         for orgao in orgaos_filtrados:
-            org_pts[orgao['nomeOrgao']] = org_pts.get(orgao['nomeOrgao'], {})
-            cargos_pontuacoes = _regex_get(orgaos_pontuacao, orgao['nomeOrgao'])
-            if cargos_pontuacoes:
-                pontuacao = _regex_get(cargos_pontuacoes, orgao['titulo'])
+            nome_orgao = orgao['nomeOrgao']
+            titulo_cargo = orgao['titulo']
+
+            pontuacoes_cargo = _regex_get(orgaos_pontuacao, nome_orgao)
+            if pontuacoes_cargo:
+                pontuacao = _regex_get(pontuacoes_cargo, titulo_cargo)
+                
+                # Se a pontuação foi encontrada, atualize a maior pontuação para esse órgão
                 if pontuacao is not None:
-                    #logging.info(f"Título encontrado: {orgao['titulo']}")
-                    pontuacao_total += pontuacao
-                    org_pts[orgao['nomeOrgao']][orgao['titulo']] = pontuacao
-                else:
-                    org_pts[orgao['nomeOrgao']][orgao['titulo']] = "Não encontrado"
+                    if nome_orgao in pontuacoes_por_orgao:
+                        pontuacoes_por_orgao[nome_orgao] = max(pontuacoes_por_orgao[nome_orgao], pontuacao)
+                    else:
+                        pontuacoes_por_orgao[nome_orgao] = pontuacao
+
+        # Soma todas as maiores pontuações de cada órgão
         
-                    
-        self.variaveis["variavel_14"] = {"value": round(pontuacao_total,2)}
-        return(pontuacao_total)
+        logging.debug(pontuacoes_por_orgao)
+        total_pontuacao = sum(pontuacoes_por_orgao.values())
+        
+        self.variaveis["variavel_14"] = {"value": round(total_pontuacao, 2)}
+        return total_pontuacao
 
     def processa_variavel_15(self):
         # Filtrar projetos que são requerimentos
@@ -482,7 +504,8 @@ class Legislatura:
         data = []
         for parlamentar in self.parlamentares:
             # Initialize a dictionary with the name of the Parlamentar
-            parlamentar_data = {"Deputado": parlamentar.nome}
+            parlamentar_data = {"Deputado": parlamentar.nome,
+                                "external_id" : parlamentar.pid}
             # Add each variable and its value to the dictionary
             for var, value_data in parlamentar.variaveis.items():
                 parlamentar_data[var] = value_data['value']  # Extract just the value
@@ -490,7 +513,7 @@ class Legislatura:
             data.append(parlamentar_data)
         # Convert the list of dictionaries to a DataFrame
         self.dataframe = pd.DataFrame(data)
-        self.dataframe.to_csv(f'{self.name}.csv', index=False, sep=';', decimal=',')
+        self.dataframe.to_pickle(f'{self.name}.pickle')
 
         return self.dataframe
 
@@ -498,9 +521,10 @@ class Legislatura:
     def _calculate_indicators(self):
         reverse_sturges = ["variavel_16"]
 
-        for col in self.dataframe.columns[1:]:  # Skipping the "Deputado" column
-            self.dataframe[col] = pd.to_numeric(self.dataframe[col], errors='coerce')
-            self.dataframe[col + "_score"] = self._calculate_indicator(self.dataframe[col], reverse=col in reverse_sturges)
+        for col in self.dataframe.columns:  # Skipping the "Deputado" column
+            if 'variavel' in col:
+                self.dataframe[col] = pd.to_numeric(self.dataframe[col], errors='coerce')
+                self.dataframe[col + "_score"] = self._calculate_indicator(self.dataframe[col], reverse=col in reverse_sturges)
 
     def _calculate_outliers(self, column):
          # Calculando o 1º e 3º quartis (25% e 75% dos dados)
@@ -521,6 +545,9 @@ class Legislatura:
     def _calculate_indicator(self, column, reverse=False):
         # Filtrando os outliers usando a função _calculate_outliers
         filtered_data = self._calculate_outliers(column)
+        
+        #Armazena os 0s
+        zero_indices = column == 0
 
         # Calculando a amplitude (diferença entre o valor máximo e mínimo)
         amplitude = filtered_data.max() - filtered_data.min()
@@ -537,20 +564,22 @@ class Legislatura:
         else:
             # Criando os bins
             bins = np.linspace(filtered_data.min(), filtered_data.max(), num_classes + 1)
-            bins[0] = -np.inf
+            #bins[0] = -np.inf
+            bins = np.insert(bins, 0, -np.inf)
+            bins[1] = 0.0001
             bins[-1] = np.inf
-            
+
             if reverse:
                 bins = bins[::-1]
             # Calculando as classes para todos os valores na coluna original
             classes = np.digitize(column, bins, right=True)
-            
             # Calculando a "posição" da classe como um valor float entre 0 e 1
-            posicao_classe = (classes - 1) / (num_classes - 1)            
+            posicao_classe = (classes - 1) / (num_classes)            
             
             # Arredondando a "posição" da classe para duas casas decimais
             scores = np.round(posicao_classe, 2)
-        
+            if not reverse:
+                scores[zero_indices] = 0
         return scores
 
 
@@ -579,12 +608,12 @@ class Legislatura:
         return stars
 
     def _to_csv(self, output_path):
-        self.dataframe.to_csv(output_path, index=False, sep=';', decimal=',')
+        self.dataframe.to_csv(output_path, index=False)
         logging.info(f"Arquivo salvo em {output_path}")
 
     def run(self, output_path):
-        if os.path.isfile(f'{self.name}.csv'):
-            self.dataframe = pd.read_csv(f'{self.name}.csv')
+        if os.path.isfile(f'{self.name}.pickle'):
+            self.dataframe = pd.read_pickle(f'{self.name}.pickle')
         else:
             for pid in tqdm(self.lista_de_nomes, desc="Carregando deputados em exercício..."):
                 self._get_parlamentar(pid)
