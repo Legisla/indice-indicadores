@@ -2,11 +2,11 @@ import requests
 import json
 import re
 import os
-from util import _acessar_api_camara, _acessar_api_portaltransparencia, _regex_get
+from util import _acessar_api_camara, _acessar_api_portaltransparencia, _acessar_bulk_camara, _regex_get
 from tqdm import tqdm
 import logging
 
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)s: %(message)s',
                     handlers=[logging.FileHandler('example.log'),
                               logging.StreamHandler()])
@@ -27,9 +27,9 @@ class Parlamentar:
     
     def run(self):
         self._busca_deputado()
-        self._buscar_projetos()
-        self._buscar_eventos()
-        self._buscar_votacoes()
+        self.projetos = self._buscar_projetos()
+        self.eventos = self._buscar_eventos()
+        self.votacoes = self._buscar_votacoes()
         self.processa_variavel_1()
         self.processa_variavel_2()
         self.processa_variavel_3()
@@ -46,7 +46,12 @@ class Parlamentar:
         self.processa_variavel_14()
         self.processa_variavel_15()
         self.processa_variavel_16()
-
+        self._cleanup()
+        
+    def _cleanup(self):
+        del(self.projetos)
+        del(self.votacoes)
+        del(self.eventos)
 
     def _busca_deputado(self):
         # Preparar os parâmetros para a API
@@ -70,7 +75,7 @@ class Parlamentar:
             return None
 
     
-    def _buscar_projetos(self):
+    def _buscar_projetos(self, extra_params={}):
         tipos_de_projetos = ['PDL', 'PEC', 'PL', 'PLP', 'PLV', #var 1,2
                              'VTS', #var 4
                              'SBT', #var 5
@@ -88,9 +93,11 @@ class Parlamentar:
             "itens": CONFIG['itens'],
             "dataApresentacaoInicio": CONFIG["dataInicio"]
         }
-        self.projetos = _acessar_api_camara("proposicoes", params)
+        params.update(extra_params)
+        
+        return(_acessar_api_camara("proposicoes", params))
     
-    def _buscar_eventos(self):
+    def _buscar_eventos(self, extra_params={}):
         orgaos = [180]
         params = {
             "dataInicio": CONFIG["dataInicio"],
@@ -100,7 +107,9 @@ class Parlamentar:
             "itens": CONFIG['itens']
             
             }
-        self.eventos = _acessar_api_camara("eventos", params)
+        
+        params.update(extra_params)
+        return(_acessar_api_camara("eventos", params))
     
     def _buscar_votacoes(self):
         params = {
@@ -108,10 +117,18 @@ class Parlamentar:
             "itens": CONFIG["itens"]
         }
 
-        data = _acessar_api_camara("votacoes", params)
+        #data = _acessar_api_camara("votacoes", params)
+        data = _acessar_bulk_camara("votacoesVotos", CONFIG["dataInicio"])["dados"]
+        votacoes = {}
 
-        self.votacoes = data
+        for voto in data:
+            if votacoes.get(voto['idVotacao']):
+                votacoes[voto['idVotacao']].append(voto)
+            else:
+                votacoes[voto['idVotacao']] = [voto]
 
+
+        return(votacoes)
         
     def _filtrar_projetos_por_tipo(self, tipos_de_projetos):
         return [projeto for projeto in self.projetos if projeto.get('siglaTipo', '') in tipos_de_projetos]
@@ -156,7 +173,7 @@ class Parlamentar:
 
     def _calcular_maioria_partido(self, votos):
         partido = self.deputado_raw['siglaPartido']
-        votos_do_partido = [voto['tipoVoto'] for voto in votos if voto['deputado_']['siglaPartido'] == partido]
+        votos_do_partido = [voto['voto'] for voto in votos if voto['deputado_']['siglaPartido'] == partido]
         if not votos_do_partido:
             return None
         vote_count = {}
@@ -170,8 +187,8 @@ class Parlamentar:
 
     def _obter_voto_parlamentar(self, votos):
         for voto in votos:
-            if voto['deputado_']['id'] == self.pid:
-                return voto['tipoVoto']
+            if voto['deputado_']['id'] == str(self.pid):
+                return voto['voto']
         return None
 
     def processa_variavel_1(self):    
@@ -192,17 +209,11 @@ class Parlamentar:
 
     def processa_variavel_3(self):
         
-        palavras_chave = [
-            "hora", "dia", "Dia", "semana", "Semana", "Mês", "ano", "data",
-            "festa", "calendario", "calendário", "titulo", "título",
-            "prêmio", "medalha", "nome", "galeria", "ponte", "ferrovia",
-            "estrada", "aeroporto", "rotatória", "honorário"
-        ]
         contagem = 0
-        for projeto in self.projetos_protagonistas:
-            
-            if self._verificar_impacto(projeto, palavras_chave):
-                #print(f"Alto Impacto: {projeto.get('ementa')}")
+        projetos_irrelevantes = [projeto['id'] for projeto in self._buscar_projetos({'codTema' : 72})]
+
+        for projeto in self.projetos_legislativos:
+            if projeto['id'] not in projetos_irrelevantes:
                 contagem += 1
 
         self.variaveis["variavel_3"] = {"value": contagem}
@@ -230,10 +241,7 @@ class Parlamentar:
         return contagem
 
     def processa_variavel_7(self):
-        orgaos_de_eventos = ["PLEN"] # VERIFICAR
-
-        eventos_filtrados = self._filtrar_eventos_por_orgao(orgaos_de_eventos)
-
+        eventos_filtrados = [evento for evento in self.eventos if evento.get('descricaoTipo', '') == "Sessão Deliberativa" and evento.get('localCamara',{}).get('nome', '') == "Plenário da Câmara dos Deputados" ]
         contagem = 0
         for evento in eventos_filtrados:
             if self._checa_presenca_deputado(evento):
@@ -424,7 +432,14 @@ class Parlamentar:
         requerimentos = self._filtrar_projetos_por_tipo(['REQ'])
         
         # Filtrar aqueles que mencionam "Audiência Pública" na ementa
-        requerimentos_audiencia_publica = [req for req in requerimentos if 'audiência pública' in req.get('ementa', '').lower()]
+        # Definindo as palavras-chave
+        palavras_chave = ['audiência pública', 'audiência publica']
+
+        # Criando a expressão regular
+        regex = r'\b(?:' + '|'.join(palavras_chave) + r')\b'
+
+        # Filtrando os requerimentos
+        requerimentos_audiencia_publica = [req for req in requerimentos if re.search(regex, req.get('ementa', '').lower(), re.IGNORECASE)]
         
         contagem = len(requerimentos_audiencia_publica)
         
@@ -436,14 +451,10 @@ class Parlamentar:
         votos_desalinhados = 0
         total_votos = 0
         
-        orgaos = ['PLEN'] #Checar se essa lógica esta certa.
-        votacoes_filtradas = self._filtrar_votacoes_por_orgao(orgaos)
-        
-        loop = tqdm(votacoes_filtradas, desc="Buscando votos...") if DEBUG else votacoes_filtradas
-        for votacao in loop:
-            votacao_id = votacao['id']
-            votos_detalhes = _acessar_api_camara(f"votacoes/{votacao_id}/votos")
-            
+        loop = tqdm(self.votacoes, desc="Buscando votos...") if DEBUG else self.votacoes
+        for votoId in self.votacoes:
+            votos_detalhes = self.votacoes[votoId]
+            import pprint
             maioria_partido = self._calcular_maioria_partido(votos_detalhes)
             
             voto_parlamentar = self._obter_voto_parlamentar(votos_detalhes)
@@ -458,7 +469,7 @@ class Parlamentar:
                 votos_desalinhados += 1
             total_votos += 1
 
-            logging.debug(f"Proposicao: {votacao['proposicaoObjeto']}")
+            logging.debug(f"Proposicao: {votos_detalhes[0]['uriVotacao']}")
             logging.debug(f"Parlamentar: {self.nome}")
             logging.debug(f"Maioria Partido: {maioria_partido}")
             logging.debug(f"Voto parlamentar: {voto_parlamentar}")
@@ -467,7 +478,7 @@ class Parlamentar:
             
         #TODO: Checar cálculo do Desvio e casos de None
         if total_votos > 0:
-            contagem =  votos_desalinhados/total_votos
+            contagem =  1 - (votos_desalinhados/total_votos)
         else:
             contagem = 0
             logging.info(self.nome)
@@ -490,7 +501,7 @@ class Legislatura:
         endpoint = "deputados/"
         params = {}
 
-        data = _acessar_api_camara(endpoint, params)
+        data = _acessar_api_camara(endpoint, params, cache=False)
 
         deputados = [d['id'] for d in data]
         return deputados
@@ -519,12 +530,10 @@ class Legislatura:
 
 
     def _calculate_indicators(self):
-        reverse_sturges = ["variavel_16"]
-
         for col in self.dataframe.columns:  # Skipping the "Deputado" column
             if 'variavel' in col:
                 self.dataframe[col] = pd.to_numeric(self.dataframe[col], errors='coerce')
-                self.dataframe[col + "_score"] = self._calculate_indicator(self.dataframe[col], reverse=col in reverse_sturges)
+                self.dataframe[col + "_score"] = self._calculate_indicator(self.dataframe[col])
 
     def _calculate_outliers(self, column):
          # Calculando o 1º e 3º quartis (25% e 75% dos dados)
@@ -542,7 +551,7 @@ class Legislatura:
 
         return filtered_data
     
-    def _calculate_indicator(self, column, reverse=False):
+    def _calculate_indicator(self, column):
         # Filtrando os outliers usando a função _calculate_outliers
         filtered_data = self._calculate_outliers(column)
         
@@ -564,28 +573,23 @@ class Legislatura:
         else:
             # Criando os bins
             # Menor valor positivo sem outliers
-            min_value = filtered_data[(filtered_data > 0)].min()
+            min_value = filtered_data.min()#filtered_data[(filtered_data > 0)].min()
             # Maior valor sem outliers
             max_value = filtered_data.max()
 
-            bins = np.linspace(min_value, max_value, num_classes + 1)
+            bins = np.linspace(min_value, max_value, num_classes)
             bins = np.insert(bins, 0, -np.inf)
             bins[-1] = np.inf
-
-            if reverse:
-                bins = bins[::-1]
+            
             # Calculando as classes para todos os valores na coluna original
-            classes = np.digitize(column, bins, right=True) - 1
+            classes = np.digitize(column, bins, right=True)
             
             # Calculando a "posição" da classe como um valor float entre 0 e 1
-            posicao_classe = (classes) / (num_classes)            
+            posicao_classe = (classes) / (num_classes)       
             
             # Arredondando a "posição" da classe para duas casas decimais
             scores = np.round(posicao_classe, 2)
-            if not reverse:
-                scores[zero_indices] = 0
-            if reverse:
-                scores[scores==0] = 0.1
+            scores[zero_indices] = 0
         return scores
 
 
