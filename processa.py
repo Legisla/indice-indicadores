@@ -276,7 +276,7 @@ class Parlamentar:
             valor_pago_int = float(valor_pago_str)
             total_valor_pago += valor_pago_int
 
-        self.variaveis["variavel_10"] = {"value": total_valor_pago}
+        self.variaveis["variavel_10"] = {"value": round(total_valor_pago,2)}
         return total_valor_pago
 
     def processa_variavel_11(self):
@@ -473,7 +473,7 @@ class Parlamentar:
             logging.info(self.nome)
         logging.debug(f"Votos Desalinhados: {votos_desalinhados}\nVotos Totais: {total_votos}\nContagem: {contagem}")
 
-        self.variaveis["variavel_16"] = {"value": contagem}
+        self.variaveis["variavel_16"] = {"value": round(contagem,2)}
         logging.debug(self.variaveis["variavel_16"])
         return contagem
 
