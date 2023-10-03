@@ -130,6 +130,9 @@ class Parlamentar:
 
         return(votacoes)
         
+    def _checa_projeto(self, pid):
+        return(pid in [projeto['id'] for projeto in self.projetos])
+    
     def _filtrar_projetos_por_tipo(self, tipos_de_projetos):
         return [projeto for projeto in self.projetos if projeto.get('siglaTipo', '') in tipos_de_projetos]
     
@@ -151,13 +154,6 @@ class Parlamentar:
     def _filtrar_votacoes_por_orgao(self, orgaos):
         return [votacao for votacao in self.votacoes if votacao.get("proposicaoObjeto") and votacao.get('siglaOrgao', '') in orgaos]
     
-    def _verificar_impacto(self, projeto, palavras_chave):
-        ementa = projeto.get('ementa', '')
-        tema = projeto.get('tema', '')  # Suponha que o campo 'tema' esteja disponível nos dados
-
-        regex = r'\b(?:' + '|'.join(palavras_chave) + r')\b'
-        return not (re.search(regex, ementa, re.IGNORECASE) or tema == "Homenagens e Datas Comemorativas")
-
     def _filtrar_eventos_por_orgao(self, orgaos_de_eventos):
         return [evento for evento in self.eventos if any(orgao.get('sigla', '') in orgaos_de_eventos for orgao in evento.get('orgaos', []))]
     
@@ -254,8 +250,9 @@ class Parlamentar:
         # Filtrar emendas de plenário
         emendas_de_plenario = self._filtrar_projetos_por_tipo(['EMP', 'EMR'])
         
-        # Filtrar fora as "Emenda de Plenário à MPV (Ato Conjunto 1/20)"
-        emendas_filtradas = [emenda for emenda in emendas_de_plenario if emenda.get('descricaoTipo', '') != "Emenda de Plenário à MPV (Ato Conjunto 1/20)"]
+        # Filtrar fora as "Emenda de Plenário à MPV (Ato Conjunto 1/20) codTipo = 873
+
+        emendas_filtradas = [emenda for emenda in emendas_de_plenario if emenda.get('codTipo') != 873]
         
         contagem = len(emendas_filtradas)
         
@@ -292,8 +289,8 @@ class Parlamentar:
         # Filtrar emendas de plenário 
         emendas_de_plenario = self._filtrar_projetos_por_tipo(['EMP'])
         
-        # Filtrar fora as "Emenda de Plenário à MPV (Ato Conjunto 1/20)"
-        emendas_filtradas = [emenda for emenda in emendas_de_plenario if emenda.get('descricaoTipo', '') != "Emenda de Plenário à MPV (Ato Conjunto 1/20)"]
+        # Filtrar só as "Emenda de Plenário à MPV (Ato Conjunto 1/20)"
+        emendas_filtradas = [emenda for emenda in emendas_de_plenario if emenda.get('codTipo') == 873]
         
         contagem = len(emendas_filtradas)
         
@@ -312,14 +309,14 @@ class Parlamentar:
     def processa_variavel_13(self):
         # Filtrar os projetos de lei de interesse
         tipos_de_projetos = ['PDL', 'PEC', 'PL', 'PLP', 'PLV']
-        projetos_filtrados = self._filtrar_projetos_por_tipo(tipos_de_projetos)
-        
+        projetos = _acessar_bulk_camara("proposicoes", CONFIG["dataInicio"])["dados"]
         # Contar projetos com tramitação especial
         regimes_especiais = ['Especial', 'Especial (Art. 202 c/c 191, I, RICD)']
         contagem = 0
-        for projeto in projetos_filtrados:
-            if projeto.get('ultimo_status_regime', '') in regimes_especiais:
-                contagem += 1
+        for projeto in projetos:
+            if self._checa_projeto(projeto.get('id')):
+                if projeto.get('siglaTipo') in tipos_de_projetos and projeto.get('ultimoStatus',{}).get('regime') in regimes_especiais:
+                    contagem += 1
         
         self.variaveis["variavel_13"] = {"value": contagem}
         return contagem
@@ -354,92 +351,71 @@ class Parlamentar:
             if cargo['nomeOrgao'] not in orgaos_obrigatorios and cargo['dataFim'] == None
         ]
         # Calcular a pontuação total com base no órgão e no título
-        orgaos_pontuacao = {
-            r"(Mesa Diretora|Secretaria)": {
-                "Presidente": 1,
-                "1º Vice-Presidente": 0.8,
-                "2º Vice-Presidente": 0.6,
-                "3º Vice-Presidente": 0.6,
-                "1º Secretário": 1,
-                "2º Secretário": 0.8,
-                "3º Secretário": 0.6,
-                "4º Secretário": 0.5,
-                "1º Suplente de Secretário": 0.4,
-                "2º Suplente de Secretário": 0.3,
-                "3º Suplente de Secretário": 0.2,
-                "4º Suplente de Secretário": 0.1,
-                r"Secretári[ao]": 1,
-            },
-            r"Ouvidoria Parlamentar": {
-                "Ouvidor-Geral": 1,
-            },
-            r"Coordenadoria": {
-                "Coordenador-Geral": 1,
-                "1º Coordenador Adjunto": 1,
-                "2º Coordenador Adjunto": 0.8,
-                "3º Coordenador Adjunto": 0.6,
-            },
-            r"Procurador[ia].*": {
-                r"Procurador[oa]": 1,
-                "1º Procurador Adjunto": 1,
-                "2º Procurador Adjunto": 0.8,
-                "3º Procurador Adjunto": 0.6,
-            },
-            r"Corregedoria Parlamentar": {
-                "Corregedor": 1,
-            },
-            r"(Comissão|Grupo de Trabalho|Subcomissão)": {
-                "Presidente": 1,
-                "1º Vice-Presidente": 0.8,
-                "2º Vice-Presidente": 0.6,
-                "3º Vice-Presidente": 0.6,
-                "Titular": 1,
-                "Relator": 1,
-                "Suplente" : 0.8,
-                r"Coordenador" : 1,
-            },
+        pontuacoes_cargos = {
+            "Presidente": 1,
+            "1º Vice-Presidente": 0.8,
+            "2º Vice-Presidente": 0.6,
+            "3º Vice-Presidente": 0.6,
+            "1º Secretário": 1,
+            "2º Secretário": 0.8,
+            "3º Secretário": 0.6,
+            "4º Secretário": 0.5,
+            "1º Suplente de Secretário": 0.4,
+            "2º Suplente de Secretário": 0.3,
+            "3º Suplente de Secretário": 0.2,
+            "4º Suplente de Secretário": 0.1,
+            "Ouvidor-Geral": 1,
+            "Coordenador-Geral": 1,
+            "Secretário de Relações Internacionais": 1,
+            "Secretário de Comunicação Social": 1,
+            "Secretário de Transparência": 1,
+            "Sec de Part Inter e Mídias Digitais": 1,
+            "Secretário da Juventude": 1,
+            "Procurador": 1,
+            "1º Procurador Adjunto": 1,
+            "2º Procurador Adjunto": 0.8,
+            "3º Procurador Adjunto": 0.6,
+            "Procuradora": 1,
+            "Corregedor": 1,
+            "Titular": 1,
+            "Suplente": 0.8,
+            "1º Coordenador Adjunto": 1,
+            "2º Coordenador Adjunto": 0.8,
+            "3º Coordenador Adjunto": 0.6,
+            "Relator": 1
         }
 
+
         total_pontuacao = 0
-        pontuacoes_por_orgao = {}
-        
+
+        total_pontuacao = 0
 
         for orgao in orgaos_filtrados:
-            nome_orgao = orgao['nomeOrgao']
             titulo_cargo = orgao['titulo']
+            
+            # Busque a pontuação diretamente do dicionário
+            pontuacao = pontuacoes_cargos.get(titulo_cargo, None)
+            
+            # Se a pontuação foi encontrada, some-a ao total
+            if pontuacao is not None:
+                total_pontuacao += pontuacao
 
-            pontuacoes_cargo = _regex_get(orgaos_pontuacao, nome_orgao)
-            if pontuacoes_cargo:
-                pontuacao = _regex_get(pontuacoes_cargo, titulo_cargo)
-                
-                # Se a pontuação foi encontrada, atualize a maior pontuação para esse órgão
-                if pontuacao is not None:
-                    if nome_orgao in pontuacoes_por_orgao:
-                        pontuacoes_por_orgao[nome_orgao] = max(pontuacoes_por_orgao[nome_orgao], pontuacao)
-                    else:
-                        pontuacoes_por_orgao[nome_orgao] = pontuacao
+        # Arredonde a pontuação total para duas casas decimais
+        total_pontuacao = round(total_pontuacao, 2)
 
-        # Soma todas as maiores pontuações de cada órgão
-        
-        logging.debug(pontuacoes_por_orgao)
-        total_pontuacao = sum(pontuacoes_por_orgao.values())
-        
-        self.variaveis["variavel_14"] = {"value": round(total_pontuacao, 2)}
+        # Armazene a pontuação total
+        self.variaveis["variavel_14"] = {"value": total_pontuacao}
+
+        # Retorne a pontuação total
         return total_pontuacao
 
+
     def processa_variavel_15(self):
-        # Filtrar projetos que são requerimentos
+        # Filtrar projetos que são requerimentos e códTipo 294 ("Requisição de Audiência Pública")
         requerimentos = self._filtrar_projetos_por_tipo(['REQ'])
         
-        # Filtrar aqueles que mencionam "Audiência Pública" na ementa
-        # Definindo as palavras-chave
-        palavras_chave = ['audiência pública', 'audiência publica']
-
-        # Criando a expressão regular
-        regex = r'\b(?:' + '|'.join(palavras_chave) + r')\b'
-
         # Filtrando os requerimentos
-        requerimentos_audiencia_publica = [req for req in requerimentos if re.search(regex, req.get('ementa', '').lower(), re.IGNORECASE)]
+        requerimentos_audiencia_publica = [req for req in requerimentos if req.get("codTipo" == 294)]
         
         contagem = len(requerimentos_audiencia_publica)
         
@@ -634,5 +610,5 @@ class Legislatura:
         self._to_csv(output_path)
 
 
-legislatura = Legislatura(name="teste")
+legislatura = Legislatura()
 legislatura.run("data/resultado.csv")
