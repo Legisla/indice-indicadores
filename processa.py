@@ -24,7 +24,6 @@ class Parlamentar:
         self.projetos = []
         self.variaveis = {}
 
-    
     def run(self):
         self._busca_deputado()
         self.projetos = self._buscar_projetos()
@@ -275,11 +274,12 @@ class Parlamentar:
         # Soma da coluna Valor_pago como inteiros
         total_valor_pago = 0
         if not csv_data:
-            logging.debug(csv_data)
-        for row in csv_data:
-            valor_pago_str = row.get('Valor pago', '0').replace('.', '').replace(',', '.')
-            valor_pago_int = float(valor_pago_str)
-            total_valor_pago += valor_pago_int
+            logging.error(csv_data)
+        else:
+            for row in csv_data:
+                valor_pago_str = row.get('Valor pago', '0').replace('.', '').replace(',', '.')
+                valor_pago_int = float(valor_pago_str)
+                total_valor_pago += valor_pago_int
 
         self.variaveis["variavel_10"] = {"value": round(total_valor_pago,2)}
         return total_valor_pago
@@ -485,10 +485,10 @@ class Legislatura:
         deputados = [d['id'] for d in data]
         return deputados
 
-    def _get_parlamentar(self, nome):
-        parlamentar = Parlamentar(nome)
+    def _get_parlamentar(self, pid):
+        parlamentar = Parlamentar(pid)
         parlamentar.run()
-        self.parlamentares.append(parlamentar)
+        return parlamentar
 
     def _to_dict(self):
         for parlamentar in self.parlamentares:
@@ -573,10 +573,15 @@ class Legislatura:
              with open(pickle_file, 'rb') as f:
                 self.parlamentares = pickle.load(f)
         else:
-            for pid in tqdm(self.lista_de_nomes, desc="Carregando deputados em exercício..."):
-                self._get_parlamentar(pid)
-            with open(pickle_file, 'wb') as f:
-                pickle.dump(self.parlamentares, f)
+            self.parlamentares = []
+        
+        for pid in tqdm(self.lista_de_nomes, desc="Carregando deputados em exercício..."):
+            if pid not in [p.pid for p in self.parlamentares]:
+                parlamentar = self._get_parlamentar(pid)
+                self.parlamentares.append(parlamentar)
+                with open(pickle_file, 'wb') as f:
+                    pickle.dump(self.parlamentares, f)
+
         self._to_dict()
         self._calculate_indicators()
         self._calculate_score_final()
