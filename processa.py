@@ -274,7 +274,7 @@ class Parlamentar:
         # Soma da coluna Valor_pago como inteiros
         total_valor_pago = 0
         if not csv_data:
-            logging.error(csv_data)
+            logging.error(f"Erro ao obter dados do Portal da Transparência de {self.nome}")
         else:
             for row in csv_data:
                 valor_pago_str = row.get('Valor pago', '0').replace('.', '').replace(',', '.')
