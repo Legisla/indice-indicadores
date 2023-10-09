@@ -6,12 +6,7 @@ from util import _acessar_api_camara, _acessar_api_portaltransparencia, _acessar
 from tqdm import tqdm
 import logging
 
-logging.basicConfig(level=logging.INFO,
-                    format='%(asctime)s %(levelname)s: %(message)s',
-                    handlers=[logging.FileHandler('example.log'),
-                              logging.StreamHandler()])
 DEBUG = True if logging.getLogger().level == 10 else False
-
 
 CONFIG = {
     "itens" : 500,
@@ -273,9 +268,7 @@ class Parlamentar:
 
         # Soma da coluna Valor_pago como inteiros
         total_valor_pago = 0
-        if not csv_data:
-            logging.error(f"Erro ao obter dados do Portal da Transparência de {self.nome}")
-        else:
+        if csv_data:
             for row in csv_data:
                 valor_pago_str = row.get('Valor pago', '0').replace('.', '').replace(',', '.')
                 valor_pago_int = float(valor_pago_str)
@@ -413,10 +406,8 @@ class Parlamentar:
     def processa_variavel_15(self):
         # Filtrar projetos que são requerimentos e códTipo 294 ("Requisição de Audiência Pública")
         requerimentos = self._filtrar_projetos_por_tipo(['REQ'])
-        
         # Filtrando os requerimentos
-        requerimentos_audiencia_publica = [req for req in requerimentos if req.get("codTipo" == 294)]
-        
+        requerimentos_audiencia_publica = [req for req in requerimentos if req.get("codTipo") == 294]
         contagem = len(requerimentos_audiencia_publica)
         
         self.variaveis["variavel_15"] = {"value": contagem}
@@ -463,131 +454,3 @@ class Parlamentar:
         self.variaveis["variavel_16"] = {"value": round(contagem,2)}
         logging.debug(self.variaveis["variavel_16"])
         return contagem
-
-import numpy as np
-from statistics import mean
-import csv, pickle
-
-
-class Legislatura:
-    def __init__(self, name='default'):
-        self.lista_de_nomes = self._lista()
-        self.parlamentares = []
-        self.name = name
-        self.data = []
-
-    def _lista(self):
-        endpoint = "deputados/"
-        params = {}
-
-        data = _acessar_api_camara(endpoint, params, cache=False)
-
-        deputados = [d['id'] for d in data]
-        return deputados
-
-    def _get_parlamentar(self, pid):
-        parlamentar = Parlamentar(pid)
-        parlamentar.run()
-        return parlamentar
-
-    def _to_dict(self):
-        for parlamentar in self.parlamentares:
-            parlamentar_data = {"Deputado": parlamentar.nome, "external_id" : parlamentar.pid}
-            for var, value_data in parlamentar.variaveis.items():
-                parlamentar_data[var] = value_data['value']
-            self.data.append(parlamentar_data)
-
-    def _save_to_file(self):
-        keys = self.data[0].keys()
-        with open(f'{self.name}.csv', 'w', newline='') as output_file:
-            dict_writer = csv.DictWriter(output_file, fieldnames=keys)
-            dict_writer.writeheader()
-            dict_writer.writerows(self.data)
-
-    def _calculate_indicators(self):
-        initial_keys = list(self.data[0].keys())  # Copia as chaves para uma lista
-        for var_name in initial_keys:
-            if 'variavel' in var_name:
-                col_data = [d[var_name] for d in self.data]
-                col_data = list(map(float, col_data))  # Converting to float
-                score = self._calculate_indicator(col_data)
-                for i, d in enumerate(self.data):
-                    d[var_name + "_score"] = score[i]
-
-    def _calculate_outliers(self, column):
-        Q1 = np.percentile(column, 25)
-        Q3 = np.percentile(column, 75)
-        IQR = Q3 - Q1
-        lower_limit = Q1 - 1.5 * IQR
-        upper_limit = Q3 + 1.5 * IQR
-        return [x for x in column if lower_limit <= x <= upper_limit]
-
-    def _calculate_indicator(self, column):
-        filtered_data = self._calculate_outliers(column)
-        zero_indices = [i for i, x in enumerate(column) if x == 0]
-        count = len([x for x in filtered_data if x > 0])
-        num_classes = int(np.ceil(1 + 3.332 * np.log10(count))) if count > 0 else 0
-
-        if num_classes <= 0:
-            return [0 if x in filtered_data else 1 for x in column]
-        
-        min_value = min(filtered_data)
-        max_value = max(filtered_data)
-        bins = np.linspace(min_value, max_value, num_classes)
-        bins = np.insert(bins, 0, -np.inf)
-        bins[-1] = np.inf
-        classes = np.digitize(column, bins, right=True)
-        posicao_classe = classes / num_classes
-
-        return [round(x, 2) if i not in zero_indices else 0 for i, x in enumerate(posicao_classe)]
-
-    def _calculate_score_final(self):
-        for d in self.data:
-            score_columns = [key for key in d.keys() if key.endswith("_score")]
-            scores = [d[col] for col in score_columns]
-            d["score_final"] = round(mean(scores), 2)
-
-    def _calculate_stars(self):
-        col_data = [d["score_final"] for d in self.data]
-        filtered_data = self._calculate_outliers(col_data)
-        max_score = max(filtered_data)
-        interval = max_score / 5
-
-        for d in self.data:
-            score = d["score_final"]
-            if score <= interval:
-                d["stars"] = 1
-            elif score <= 2 * interval:
-                d["stars"] = 2
-            elif score <= 3 * interval:
-                d["stars"] = 3
-            elif score <= 4 * interval:
-                d["stars"] = 4
-            else:
-                d["stars"] = 5
-
-
-    def run(self):
-        pickle_file = f'{self.name}.pickle'
-        if os.path.isfile(pickle_file):
-             with open(pickle_file, 'rb') as f:
-                self.parlamentares = pickle.load(f)
-        else:
-            self.parlamentares = []
-        
-        for pid in tqdm(self.lista_de_nomes, desc="Carregando deputados em exercício..."):
-            if pid not in [p.pid for p in self.parlamentares]:
-                parlamentar = self._get_parlamentar(pid)
-                self.parlamentares.append(parlamentar)
-                with open(pickle_file, 'wb') as f:
-                    pickle.dump(self.parlamentares, f)
-
-        self._to_dict()
-        self._calculate_indicators()
-        self._calculate_score_final()
-        self._calculate_stars()
-        self._save_to_file()
-
-# Initialize the class
-legislatura = Legislatura()
-legislatura.run()

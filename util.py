@@ -43,7 +43,7 @@ def cached_requests(url, params=None, cache_dir='cache_api', filetype='json', ca
     response = requests.get(url, params=params, **kwargs)
     if response.status_code in [403, 502]:
         sleep(5)
-        logging.debug("Esta demorando um pouquinho...")
+        logging.error(f"Esta demorando um pouquinho... {response.status_code}")
 
         response = requests.get(url, params=params, **kwargs)
     
@@ -59,7 +59,7 @@ def cached_requests(url, params=None, cache_dir='cache_api', filetype='json', ca
                 csv_reader = csv.DictReader(StringIO(response.text), delimiter=';')
                 return [row for row in csv_reader]
     else:
-        logging.debug(f"Erro ao acessar API: {response.status_code}")
+        logging.error(f"Erro ao acessar API: {response.status_code}")
         return None
 
 
