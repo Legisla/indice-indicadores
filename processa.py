@@ -2,6 +2,7 @@ import requests
 import json
 import re
 import os
+from datetime import datetime
 from util import _acessar_api_camara, _acessar_api_portaltransparencia, _acessar_bulk_camara, _regex_get
 from tqdm import tqdm
 import logging
@@ -11,16 +12,20 @@ DEBUG = True if logging.getLogger().level == 10 else False
 CONFIG = {
     "itens" : 500,
     "dataInicio" : "2023-02-01",
+    "dataFim" : datetime.now().strftime('%Y-%m-%d')
 }
 
 class Parlamentar:
-    def __init__(self, pid):
-        self.pid = pid
+    def __init__(self, parlamentar, dataInicio = CONFIG['dataInicio'], dataFim=CONFIG['dataFim']):
+        self.pid = parlamentar.get('id')
+        self.nome = parlamentar.get('nome')
+        self.parlamentar_raw = parlamentar
+        self.dataInicio = dataInicio
+        self.dataFim = dataFim
         self.projetos = []
         self.variaveis = {}
 
     def run(self):
-        self._busca_deputado()
         self.projetos = self._buscar_projetos()
         self.eventos = self._buscar_eventos()
         self.votacoes = self._buscar_votacoes()
@@ -47,27 +52,6 @@ class Parlamentar:
         del(self.votacoes)
         del(self.eventos)
 
-    def _busca_deputado(self):
-        # Preparar os parâmetros para a API
-        params = {
-            "id": self.pid,
-            "dataInicio" : CONFIG["dataInicio"]
-        }
-        
-        # Acessar a API para obter a lista de deputados com o nome especificado
-        endpoint = "deputados"
-        dados = _acessar_api_camara(endpoint, params)
-        
-        # Se mais de um deputado for encontrado, você pode querer implementar alguma lógica
-        # para lidar com isso. Aqui, eu estou assumindo que o primeiro deputado retornado é o correto.
-        if dados:
-            self.nome = dados[0]['nome']
-            self.deputado_raw = dados[0]
-            return self.pid
-        else:
-            logging.debug(f"Deputado com id {self.pid} não encontrado.")
-            return None
-
     
     def _buscar_projetos(self, extra_params={}):
         tipos_de_projetos = ['PDL', 'PEC', 'PL', 'PLP', 'PLV', #var 1,2
@@ -85,8 +69,10 @@ class Parlamentar:
             "ordem": "ASC",
             "ordenarPor": "id",
             "itens": CONFIG['itens'],
-            "dataApresentacaoInicio": CONFIG["dataInicio"]
-        }
+            "dataApresentacaoInicio": self.dataInicio,
+            "dataApresentacaoFim" : self.dataFim
+        }    
+
         params.update(extra_params)
         
         return(_acessar_api_camara("proposicoes", params))
@@ -94,38 +80,49 @@ class Parlamentar:
     def _buscar_eventos(self, extra_params={}):
         orgaos = [180]
         params = {
-            "dataInicio": CONFIG["dataInicio"],
+            "dataInicio": self.dataInicio,
+            "dataFim": self.dataFim,
             "idOrgao" : orgaos,
             "ordem": "ASC",
             "ordenarPor": "dataHoraInicio",
             "itens": CONFIG['itens']
-            
-            }
+        }
         
         params.update(extra_params)
         return(_acessar_api_camara("eventos", params))
     
     def _buscar_votacoes(self):
         params = {
-            "dataInicio": CONFIG["dataInicio"],
+            "dataInicio": self.dataInicio,
+            "dataFim" : self.dataFim,
             "itens": CONFIG["itens"]
         }
 
         #data = _acessar_api_camara("votacoes", params)
-        data = _acessar_bulk_camara("votacoesVotos", CONFIG["dataInicio"])["dados"]
+        ##TODO checar se a votação esta no range de datas e ampliar o bulk para multiplos anos
+        data = _acessar_bulk_camara("votacoesVotos", self._lista_anos())
+        
         votacoes = {}
 
         for voto in data:
-            if votacoes.get(voto['idVotacao']):
-                votacoes[voto['idVotacao']].append(voto)
-            else:
-                votacoes[voto['idVotacao']] = [voto]
-
-
+            if self._checa_data(voto['dataHoraVoto']):
+                if votacoes.get(voto['idVotacao']):
+                    votacoes[voto['idVotacao']].append(voto)
+                else:
+                    votacoes[voto['idVotacao']] = [voto]
         return(votacoes)
         
     def _checa_projeto(self, pid):
         return(pid in [projeto['id'] for projeto in self.projetos])
+    
+    def _checa_data(self, datacomt):
+        start_date_dt = datetime.strptime(self.dataInicio, "%Y-%m-%d")
+        end_date_dt = datetime.strptime(self.dataFim, "%Y-%m-%d")
+
+        vote_date_str = datacomt.split('T')[0]  # Pega só a parte da data, ignorando a hora
+        vote_date_dt = datetime.strptime(vote_date_str, "%Y-%m-%d")
+
+        return start_date_dt <= vote_date_dt <= end_date_dt
     
     def _filtrar_projetos_por_tipo(self, tipos_de_projetos):
         return [projeto for projeto in self.projetos if projeto.get('siglaTipo', '') in tipos_de_projetos]
@@ -157,12 +154,12 @@ class Parlamentar:
 
         if data:
             for deputado in data:
-                if deputado['nome'] == self.nome:
+                if deputado['id'] == self.pid:
                     return True
         return False
 
     def _calcular_maioria_partido(self, votos):
-        partido = self.deputado_raw['siglaPartido']
+        partido = self.parlamentar_raw['siglaPartido']
         votos_do_partido = [voto['voto'] for voto in votos if voto['deputado_']['siglaPartido'] == partido]
         if not votos_do_partido:
             return None
@@ -180,6 +177,14 @@ class Parlamentar:
             if voto['deputado_']['id'] == str(self.pid):
                 return voto['voto']
         return None
+
+    def _lista_anos(self):
+        start_year = int(self.dataInicio.split('-')[0])
+        years = [start_year]
+        if self.dataFim:
+            end_year = int(self.dataFim.split('-')[0])
+            years = list(range(start_year, end_year + 1))
+        return years
 
     def processa_variavel_1(self):    
         tipos_de_projetos = ['PDL', 'PEC', 'PL', 'PLP', 'PLV']
@@ -264,7 +269,7 @@ class Parlamentar:
     
     def processa_variavel_10(self):
         # Obter os dados em CSV do Portal da Transparência
-        csv_data = _acessar_api_portaltransparencia(self.nome, 2023)
+        csv_data = _acessar_api_portaltransparencia(self.nome, self._lista_anos())
 
         # Soma da coluna Valor_pago como inteiros
         total_valor_pago = 0
@@ -302,12 +307,12 @@ class Parlamentar:
     def processa_variavel_13(self):
         # Filtrar os projetos de lei de interesse
         tipos_de_projetos = ['PDL', 'PEC', 'PL', 'PLP', 'PLV']
-        projetos = _acessar_bulk_camara("proposicoes", CONFIG["dataInicio"])["dados"]
+        projetos = _acessar_bulk_camara("proposicoes", self._lista_anos())
         # Contar projetos com tramitação especial
         regimes_especiais = ['Especial', 'Especial (Art. 202 c/c 191, I, RICD)']
         contagem = 0
         for projeto in projetos:
-            if self._checa_projeto(projeto.get('id')):
+            if self._checa_data(projeto.get('dataApresentacao')) and self._checa_projeto(projeto.get('id')):
                 if projeto.get('siglaTipo') in tipos_de_projetos and projeto.get('ultimoStatus',{}).get('regime') in regimes_especiais:
                     contagem += 1
         
@@ -319,7 +324,8 @@ class Parlamentar:
 
         # Preparar os parâmetros para a API
         params = {
-            "dataInicio": CONFIG["dataInicio"],
+            "dataInicio": self.dataInicio,
+            "dataFim" : self.dataFim,
             "itens": CONFIG["itens"],
             "ordem": "ASC",
             "ordenarPor": "dataInicio"
@@ -336,7 +342,7 @@ class Parlamentar:
             "Plenário",
             "Plenário Comissão Geral",
             "CÂMARA DOS DEPUTADOS",
-            f"Bancada de {self.deputado_raw['siglaUf']}"
+            f"Bancada de {self.parlamentar_raw['siglaUf']}"
         ]
 
         orgaos_filtrados = [

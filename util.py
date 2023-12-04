@@ -63,7 +63,7 @@ def cached_requests(url, params=None, cache_dir='cache_api', filetype='json', ca
         return None
 
 
-def _acessar_api_portaltransparencia(autor, ano, **kwargs):
+def _acessar_api_portaltransparencia(autor, anos, **kwargs):
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -73,23 +73,33 @@ def _acessar_api_portaltransparencia(autor, ano, **kwargs):
         }
 
         url = "https://portaldatransparencia.gov.br/emendas/consulta/baixar"
-        params = {
-            "paginacaoSimples": "true",
-            "direcaoOrdenacao": "asc",
-            "palavraChave": autor,
-            "de": ano,
-            "ate": ano,
-            "colunasSelecionadas": "codigoEmenda,ano,tipoEmenda,autor,numeroEmenda,localidadeDoGasto,funcao,subfuncao,valorEmpenhado,valorLiquidado,valorPago"
-        }
-        
-        data = cached_requests(url, params=params, filetype='csv', headers=headers, **kwargs)
-        return data
+        aggregated_data = []
+        for ano in anos:
+            params = {
+                "paginacaoSimples": "true",
+                "direcaoOrdenacao": "asc",
+                "palavraChave": autor,
+                "de": ano,
+                "ate": ano,
+                "colunasSelecionadas": "codigoEmenda,ano,tipoEmenda,autor,numeroEmenda,localidadeDoGasto,funcao,subfuncao,valorEmpenhado,valorLiquidado,valorPago"
+            }
+            
+            data = cached_requests(url, params=params, filetype='csv', headers=headers, **kwargs)
+            if not aggregated_data:
+                aggregated_data.extend(data)
+            else:
+                aggregated_data.extend(data[1:]) 
+        return(aggregated_data)
 
-def _acessar_bulk_camara(variavel, data, formato='json', **kwargs):
-    url = f"https://dadosabertos.camara.leg.br/arquivos/{variavel}/{formato}/{variavel}-{data[0:4]}.{formato}"
+def _acessar_bulk_camara(variavel, anos, formato='json', **kwargs):
+    aggregated_data = []
+    for ano in anos:
+        url = f"https://dadosabertos.camara.leg.br/arquivos/{variavel}/{formato}/{variavel}-{ano}.{formato}"
 
-    data = cached_requests(url, params={}, filetype=formato, **kwargs)
-    return(data)
+        data = cached_requests(url, params={}, filetype=formato, **kwargs)
+        aggregated_data.extend(data["dados"])
+
+    return(aggregated_data)
 
 def _acessar_api_camara(endpoint, params=None, use_params=True, **kwargs):
     url_base = "https://dadosabertos.camara.leg.br/api/v2"
