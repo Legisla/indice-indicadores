@@ -25,6 +25,8 @@ class Legislatura:
         self.data = []
 
     def _lista(self):
+        """Obtém a lista de deputados da API da Câmara. Se a data final não for a data atual, busca os deputados ativos durante o intervalo especificado entre 'dataInicio' e 'dataFim'."""
+
         endpoint = "deputados/"
         params = {}
         
@@ -38,6 +40,8 @@ class Legislatura:
         return data
 
     def _get_parlamentar_data(self, p):
+        """Cria uma instância da classe 'Parlamentar' para cada deputado e executa a coleta e processamento de dados relacionados a ele. Cada parlamentar é processado individualmente, e seus dados são armazenados para análise posterior."""
+
         parlamentar = Parlamentar(p, self.dataInicio, self.dataFim)
         parlamentar.run()
         return parlamentar
@@ -57,6 +61,8 @@ class Legislatura:
             dict_writer.writerows(self.data)
 
     def _calculate_indicators(self):
+        """Realiza o cálculo dos indicadores para cada parlamentar. Este método percorre cada variável calculada e aplica a função '_calculate_indicator' para obter uma pontuação normalizada baseada na distribuição dos dados."""
+
         initial_keys = list(self.data[0].keys())  # Copia as chaves para uma lista
         for var_name in initial_keys:
             if 'variavel' in var_name:
@@ -75,6 +81,8 @@ class Legislatura:
         return [x for x in column if lower_limit <= x <= upper_limit]
 
     def _calculate_indicator(self, column):
+        """Aplica o método de detecção de outliers e a regra de Sturges para categorizar os dados em classes. Os dados são primeiramente filtrados para remover outliers, e então são divididos em classes usando a fórmula de Sturges, que é baseada na contagem de dados não nulos."""
+
         filtered_data = self._calculate_outliers(column)
         zero_indices = [i for i, x in enumerate(column) if x == 0]
         count = len([x for x in filtered_data if x > 0])
@@ -94,12 +102,16 @@ class Legislatura:
         return [round(x, 2) if i not in zero_indices else 0 for i, x in enumerate(posicao_classe)]
 
     def _calculate_score_final(self):
+        """Calcula a pontuação final para cada parlamentar. Este método agrega as pontuações de todas as variáveis calculadas para cada parlamentar e calcula a média, resultando em um 'score_final' que representa o desempenho geral do parlamentar."""
+
         for d in self.data:
             score_columns = [key for key in d.keys() if key.endswith("_score")]
             scores = [d[col] for col in score_columns]
             d["score_final"] = round(mean(scores), 2)
 
     def _calculate_stars(self):
+        """Atribui uma classificação de estrelas aos parlamentares com base em seu 'score_final'. Este método divide o intervalo de pontuação máxima em cinco partes iguais e atribui de 1 a 5 estrelas aos parlamentares, dependendo de onde seu 'score_final' se enquadra neste intervalo."""
+
         col_data = [d["score_final"] for d in self.data]
         filtered_data = self._calculate_outliers(col_data)
         max_score = max(filtered_data)
@@ -120,6 +132,8 @@ class Legislatura:
 
 
     def run(self):
+        """Executa o processo completo de geração do índice. Inclui a coleta de dados dos parlamentares, o processamento e cálculo de indicadores, a geração de pontuações finais e a saída dos dados em um arquivo CSV. Também gerencia o cache de dados dos parlamentares para otimizar o processo."""
+
         pickle_file = f'{self.name}.pickle'
         if os.path.isfile(pickle_file):
              with open(pickle_file, 'rb') as f:
@@ -142,6 +156,8 @@ class Legislatura:
 
 
 def main():
+    """Função principal para executar o script. Permite configurar parâmetros como a necessidade de atualizar o cache, remover dados de cache, definir o nome da legislatura e especificar o intervalo de datas. Inicia o processo de geração do índice com base nos parâmetros fornecidos."""
+
     parser = argparse.ArgumentParser(description="Script para rodar uma Legislatura.")
     parser.add_argument("--refresh", help="Força o refresh do arquivo .pickle", action="store_true")
     parser.add_argument("--clear-cache", help="Remove o diretório cache_api", action="store_true")

@@ -98,8 +98,6 @@ class Parlamentar:
             "itens": CONFIG["itens"]
         }
 
-        #data = _acessar_api_camara("votacoes", params)
-        ##TODO checar se a votação esta no range de datas e ampliar o bulk para multiplos anos
         data = _acessar_bulk_camara("votacoesVotos", self._lista_anos())
         
         votacoes = {}
@@ -186,7 +184,9 @@ class Parlamentar:
             years = list(range(start_year, end_year + 1))
         return years
 
-    def processa_variavel_1(self):    
+    def processa_variavel_1(self):
+        """Calcula a quantidade de projetos legislativos (PDL, PEC, PL, PLP, PLV) apresentados pelo parlamentar, incluindo tanto autoria própria quanto coautoria."""
+
         tipos_de_projetos = ['PDL', 'PEC', 'PL', 'PLP', 'PLV']
         self.projetos_legislativos = self._filtrar_projetos_por_tipo(tipos_de_projetos)
         
@@ -196,6 +196,8 @@ class Parlamentar:
         return contagem
 
     def processa_variavel_2(self):
+        """Determina o número de projetos nos quais o parlamentar é o autor principal. Este cálculo envolve filtrar projetos legislativos e identificar aqueles onde o parlamentar é o primeiro autor, indicando protagonismo nas matérias legislativas. A função `_filtrar_projetos_protagonistas` é usada para isolar esses projetos."""
+
         self.projetos_protagonistas = self._filtrar_projetos_protagonistas(self.projetos_legislativos)
 
         contagem = len(self.projetos_protagonistas)
@@ -203,7 +205,8 @@ class Parlamentar:
         return contagem
 
     def processa_variavel_3(self):
-        
+        """Avalia a relevância das autorias do parlamentar, categorizando os projetos irrelevantes quando tem o tema Homenagens e Datas Comemorativas e removendo-os da contagem."""
+
         contagem = 0
         projetos_irrelevantes = [projeto['id'] for projeto in self._buscar_projetos({'codTema' : 72})]
 
@@ -215,13 +218,17 @@ class Parlamentar:
         return contagem
 
     def processa_variavel_4(self):
-            # Filtrar votos em separado
-            votos_em_separado = self._filtrar_projetos_por_tipo(['VTS'])
-            contagem = len(votos_em_separado)
-            self.variaveis["variavel_4"] = {"value": contagem}
-            return contagem
+        """Conta o número de votos em separado apresentados pelo parlamentar, refletindo sua participação ativa e perspectivas alternativas em votações."""
+        
+        # Filtrar votos em separado
+        votos_em_separado = self._filtrar_projetos_por_tipo(['VTS'])
+        contagem = len(votos_em_separado)
+        self.variaveis["variavel_4"] = {"value": contagem}
+        return contagem
 
     def processa_variavel_5(self):
+        """Mede a quantidade de substitutivos apresentados pelo parlamentar, demonstrando sua capacidade de propor soluções alternativas em debates legislativos."""
+
         # Filtrar substitutivos
         substitutivos = self._filtrar_projetos_por_tipo(['SBT'])
         contagem = len(substitutivos)
@@ -229,6 +236,8 @@ class Parlamentar:
         return contagem
 
     def processa_variavel_6(self):
+        """Quantifica as relatorias apresentadas pelo parlamentar, indicando seu envolvimento e influência na análise e destino de matérias legislativas."""
+
         # Filtrar relatorias apresentadas
         relatorias = self._filtrar_projetos_por_tipo(['PRL'])
         contagem = len(relatorias)
@@ -236,6 +245,9 @@ class Parlamentar:
         return contagem
 
     def processa_variavel_7(self):
+        """Calcula a frequência de presença do parlamentar em sessões deliberativas no Plenário. Envolve a filtragem de eventos pelo tipo 'Sessão Deliberativa' e a verificação da presença do parlamentar usando a função `_checa_presenca_deputado`."""
+
+
         eventos_filtrados = [evento for evento in self.eventos if evento.get('descricaoTipo', '') == "Sessão Deliberativa" and evento.get('localCamara',{}).get('nome', '') == "Plenário da Câmara dos Deputados" ]
         contagem = 0
         for evento in eventos_filtrados:
@@ -246,6 +258,8 @@ class Parlamentar:
         return contagem
 
     def processa_variavel_8(self):
+        """Conta as emendas de plenário e relator (tipos EMP e EMR) propostas pelo parlamentar, excluindo as 'Emendas de Plenário à MPV (Ato Conjunto 1/20)', para avaliar sua contribuição em sessões plenárias."""
+
         # Filtrar emendas de plenário
         emendas_de_plenario = self._filtrar_projetos_por_tipo(['EMP', 'EMR'])
         
@@ -259,6 +273,8 @@ class Parlamentar:
         return contagem
 
     def processa_variavel_9(self):
+        """Determina o número total de solicitações de informações e propostas de fiscalização e controle protocoladas."""
+
         # Filtrar requerimentos de informação e propostas de fiscalização
         requerimentos_fiscalizacao = self._filtrar_projetos_por_tipo(['RIC', 'PFC'])
         
@@ -268,6 +284,8 @@ class Parlamentar:
         return contagem
     
     def processa_variavel_10(self):
+        """Calcula o total de emendas parlamentares empenhadas que foram pagas até o momento da execução do script."""
+
         # Obter os dados em CSV do Portal da Transparência
         csv_data = _acessar_api_portaltransparencia(self.nome, self._lista_anos())
 
@@ -283,7 +301,7 @@ class Parlamentar:
         return total_valor_pago
 
     def processa_variavel_11(self):
-        #TODO Checar diferença da Variavel 11
+        """Avalia o número de emendas de plenário específicas para Medidas Provisórias."""
         # Filtrar emendas de plenário 
         emendas_de_plenario = self._filtrar_projetos_por_tipo(['EMP'])
         
@@ -296,6 +314,8 @@ class Parlamentar:
         return contagem
 
     def processa_variavel_12(self):
+        """Quantifica as emendas propostas pelo parlamentar em projetos de lei orçamentária (PLN)."""
+
         #Emenda LOA
 
         emendas_loa = self._filtrar_projetos_por_tipo(["PLN"])
@@ -305,6 +325,9 @@ class Parlamentar:
         return contagem
     
     def processa_variavel_13(self):
+        """Calcula a quantidade de projetos de lei de interesse do parlamentar com regime de tramitação especial. Devido à limitação da API, que não permite filtrar proposições diretamente por seu status de tramitação, este indicador requer uma abordagem diferente. Primeiramente, utiliza-se a função `_acessar_bulk_camara` para coletar um conjunto abrangente de proposições. Em seguida, cada proposição é analisada individualmente pela função `_checa_projeto` para determinar se pertence ao parlamentar. Finalmente, os projetos são filtrados com base nos regimes especiais de tramitação."""
+
+
         # Filtrar os projetos de lei de interesse
         tipos_de_projetos = ['PDL', 'PEC', 'PL', 'PLP', 'PLV']
         projetos = _acessar_bulk_camara("proposicoes", self._lista_anos())
@@ -320,6 +343,9 @@ class Parlamentar:
         return contagem
 
     def processa_variavel_14(self):
+        """Calcula uma pontuação baseada nos cargos ocupados pelo parlamentar durante a legislatura. O método envolve coletar dados de órgãos via API, filtrar cargos obrigatórios e calcular pontuações com base no título do cargo ocupado."""
+
+
         logging.debug(f"Buscando dep {self.nome}")
 
         # Preparar os parâmetros para a API
@@ -410,6 +436,8 @@ class Parlamentar:
 
 
     def processa_variavel_15(self):
+        """Determina o número de requerimentos de Audiência Pública protocolados pelo parlamentar."""
+
         # Filtrar projetos que são requerimentos e códTipo 294 ("Requisição de Audiência Pública")
         requerimentos = self._filtrar_projetos_por_tipo(['REQ'])
         # Filtrando os requerimentos
@@ -421,6 +449,9 @@ class Parlamentar:
 
 
     def processa_variavel_16(self):
+        """Avalia a taxa de alinhamento do parlamentar com a maioria do partido nas votações. O processo inclui o cálculo da maioria do partido em votações específicas e a comparação com o voto do parlamentar. Utiliza as funções `_calcular_maioria_partido` e `_obter_voto_parlamentar` para determinar o alinhamento partidário nas decisões de voto."""
+
+
         votos_desalinhados = 0
         total_votos = 0
         
