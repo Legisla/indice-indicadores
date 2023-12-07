@@ -6,6 +6,7 @@ from datetime import datetime
 from util import _acessar_api_camara, _acessar_api_portaltransparencia, _acessar_bulk_camara, _regex_get
 from tqdm import tqdm
 import logging
+import gc
 
 DEBUG = True if logging.getLogger().level == 10 else False
 
@@ -51,6 +52,8 @@ class Parlamentar:
         del(self.projetos)
         del(self.votacoes)
         del(self.eventos)
+        del(self.parlamentar_raw)
+        gc.collect()
 
     
     def _buscar_projetos(self, extra_params={}):

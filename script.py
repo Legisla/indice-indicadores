@@ -7,6 +7,7 @@ from processa import Parlamentar
 from util import _acessar_api_camara
 from tqdm import tqdm
 import logging
+import gc
 
 logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s %(levelname)s: %(message)s',
@@ -27,16 +28,16 @@ class Legislatura:
     def _lista(self):
         """Obtém a lista de deputados da API da Câmara. Se a data final não for a data atual, busca os deputados ativos durante o intervalo especificado entre 'dataInicio' e 'dataFim'."""
 
+        #BUG Endpoint /deputados esta retornando vazio ao invés dos deputados em exercício
         endpoint = "deputados/"
-        params = {}
-        
-        if self.dataFim != TODAY:
-            params = {
-                "dataInicio" : self.dataFim,
-                "dataFim" : self.dataFim
+               
+        params = {
+            "dataInicio" : self.dataFim,
+            "dataFim" : self.dataFim
             }
-
+        
         data = _acessar_api_camara(endpoint, params, cache=False)
+        
         return data
 
     def _get_parlamentar_data(self, p):
@@ -147,6 +148,7 @@ class Legislatura:
                 self.parlamentares.append(_parlamentar)
                 with open(pickle_file, 'wb') as f:
                     pickle.dump(self.parlamentares, f)
+                gc.collect()
 
         self._to_dict()
         self._calculate_indicators()
