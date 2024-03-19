@@ -28,13 +28,15 @@ class Parlamentar:
         self.projetos = []
         self.variaveis = {}
         self.historico = []
+        self.tempo = {}
 
 
     def run(self):
         self.projetos = self._buscar_projetos()
         self.eventos = self._buscar_eventos()
         self.votacoes = self._buscar_votacoes()
-        self.votacoes = self._buscar_historico()
+        self.historico = self._buscar_historico()
+        self.tempo = self._calcula_tempo()
         self.processa_variavel_1()
         self.processa_variavel_2()
         self.processa_variavel_3()
@@ -118,6 +120,7 @@ class Parlamentar:
                 else:
                     votacoes[voto['idVotacao']] = [voto]
         return(votacoes)
+
     def _buscar_historico(self):
         params = {
             "dataInicio": self.dataInicio,
@@ -127,6 +130,30 @@ class Parlamentar:
         endpoint = f"deputados/{id}/historico"
         historico = _acessar_api_camara(endpoint, params)
         return(historico)
+    
+    def _calcula_tempo(self):
+        data_anterior = None
+        situacao_anterior = None
+        tempo = {}
+        
+        for index, h in enumerate(self.historico):
+            data_atual = datetime.strptime(h['dataHora'], '%Y-%m-%dT%H:%M')
+            situacao_atual = h['situacao']
+            
+            if situacao_anterior is None:
+                data_anterior = data_atual
+                situacao_anterior = situacao_atual
+                tempo[situacao_anterior] = 0
+            else:
+                diferenca = data_atual - data_anterior
+                tempo[situacao_anterior] = tempo.get(situacao_anterior, 0) + diferenca.total_seconds()
+                situacao_anterior = situacao_atual
+                data_anterior = data_atual
+
+            if index == len(self.historico) - 1:
+                diferenca = datetime.now() - data_atual
+                tempo[situacao_atual] = tempo.get(situacao_atual, 0) + diferenca.total_seconds()
+        return tempo
 
     def _checa_projeto(self, pid):
         return(pid in [projeto['id'] for projeto in self.projetos])
