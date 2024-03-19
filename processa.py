@@ -7,6 +7,8 @@ from util import _acessar_api_camara, _acessar_api_portaltransparencia, _acessar
 from tqdm import tqdm
 import logging
 import gc
+from unidecode import unidecode
+
 
 DEBUG = True if logging.getLogger().level == 10 else False
 
@@ -309,8 +311,21 @@ class Parlamentar:
         emendas_de_plenario = self._filtrar_projetos_por_tipo(['EMP'])
         
         # Filtrar só as "Emenda de Plenário à MPV (Ato Conjunto 1/20)"
-        emendas_filtradas = [emenda for emenda in emendas_de_plenario if emenda.get('codTipo') == 873]
+        emendas_de_plenario_filtradas = [emenda for emenda in emendas_de_plenario if emenda.get('codTipo') == 873]
         
+        # Filtrar emendas de comissão
+        emendas_de_comissao = self._filtrar_projetos_por_tipo(['EMC'])
+        
+        
+        frase_filtro = "Dá nova redação à MPV 1162/2023"
+        # Convertendo para minúsculas e removendo a acentuação
+        frase_sem_acentos = unidecode(frase_filtro.lower())
+        # Filtrar só as "Emenda de comissão" que contenham o texto "dá nova redação à MPV" 
+        emendas_de_comissao_filtradas = [emenda for emenda in emendas_de_comissao if unidecode(emenda.get('ementa').lower()) == frase_sem_acentos]
+        
+        # Juntando as duas listas
+        emendas_filtradas = emendas_de_comissao_filtradas + emendas_de_plenario_filtradas
+
         contagem = len(emendas_filtradas)
         
         self.variaveis["variavel_11"] = {"value": contagem}
