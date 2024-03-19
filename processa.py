@@ -126,7 +126,6 @@ class Parlamentar:
         id= self.pid
         endpoint = f"deputados/{id}/historico"
         historico = _acessar_api_camara(endpoint, params)
-        print(historico)
         return(historico)
 
     def _checa_projeto(self, pid):
