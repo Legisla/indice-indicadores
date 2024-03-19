@@ -27,11 +27,14 @@ class Parlamentar:
         self.dataFim = dataFim
         self.projetos = []
         self.variaveis = {}
+        self.historico = []
+
 
     def run(self):
         self.projetos = self._buscar_projetos()
         self.eventos = self._buscar_eventos()
         self.votacoes = self._buscar_votacoes()
+        self.votacoes = self._buscar_historico()
         self.processa_variavel_1()
         self.processa_variavel_2()
         self.processa_variavel_3()
@@ -115,7 +118,17 @@ class Parlamentar:
                 else:
                     votacoes[voto['idVotacao']] = [voto]
         return(votacoes)
-        
+    def _buscar_historico(self):
+        params = {
+            "dataInicio": self.dataInicio,
+            "dataFim" : self.dataFim
+        }    
+        id= self.pid
+        endpoint = f"deputados/{id}/historico"
+        historico = _acessar_api_camara(endpoint, params)
+        print(historico)
+        return(historico)
+
     def _checa_projeto(self, pid):
         return(pid in [projeto['id'] for projeto in self.projetos])
     
