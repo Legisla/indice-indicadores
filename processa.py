@@ -66,7 +66,8 @@ class Parlamentar:
                              'EMP', 'EMR', #var 8
                              'RIC', 'PFC', #var 9
                              'PLN', #var 12
-                             'REQ' #var 15
+                             'REQ', #var 15
+                             'EMC' #var 11
                              ]
         params = {
             "idDeputadoAutor": self.pid,
@@ -322,11 +323,12 @@ class Parlamentar:
         frase_sem_acentos = unidecode(frase_filtro.lower())
         # Filtrar só as "Emenda de comissão" que contenham o texto "dá nova redação à MPV" 
         emendas_de_comissao_filtradas = [emenda for emenda in emendas_de_comissao if unidecode(emenda.get('ementa').lower()) == frase_sem_acentos]
-        
+
         # Juntando as duas listas
         emendas_filtradas = emendas_de_comissao_filtradas + emendas_de_plenario_filtradas
 
         contagem = len(emendas_filtradas)
+        print(contagem)
         
         self.variaveis["variavel_11"] = {"value": contagem}
         return contagem
