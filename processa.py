@@ -328,7 +328,6 @@ class Parlamentar:
         emendas_filtradas = emendas_de_comissao_filtradas + emendas_de_plenario_filtradas
 
         contagem = len(emendas_filtradas)
-        print(contagem)
         
         self.variaveis["variavel_11"] = {"value": contagem}
         return contagem
