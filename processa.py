@@ -146,13 +146,14 @@ class Parlamentar:
                 tempo[situacao_anterior] = 0
             else:
                 diferenca = data_atual - data_anterior
-                tempo[situacao_anterior] = tempo.get(situacao_anterior, 0) + diferenca.total_seconds()
+                tempo[situacao_anterior] = tempo.get(situacao_anterior, 0) + int(diferenca.days)
                 situacao_anterior = situacao_atual
                 data_anterior = data_atual
 
             if index == len(self.historico) - 1:
                 diferenca = datetime.now() - data_atual
-                tempo[situacao_atual] = tempo.get(situacao_atual, 0) + diferenca.total_seconds()
+                tempo[situacao_atual] = tempo.get(situacao_atual, 0) + int(diferenca.days)
+        
         return tempo
 
     def _checa_projeto(self, pid):

@@ -49,7 +49,7 @@ class Legislatura:
 
     def _to_dict(self):
         for parlamentar in self.parlamentares:
-            parlamentar_data = {"Deputado": parlamentar.nome, "external_id" : parlamentar.pid, "time_in_office": parlamentar.tempo['Exercício']}
+            parlamentar_data = {"Deputado": parlamentar.nome, "external_id" : parlamentar.pid, "time_in_office": int(parlamentar.tempo['Exercício'])}
             for var, value_data in parlamentar.variaveis.items():
                 parlamentar_data[var] = value_data['value']
             self.data.append(parlamentar_data)
