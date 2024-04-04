@@ -22,6 +22,7 @@ class Parlamentar:
     def __init__(self, parlamentar, dataInicio = CONFIG['dataInicio'], dataFim=CONFIG['dataFim']):
         self.pid = parlamentar.get('id')
         self.nome = parlamentar.get('nome')
+        self.dados = {}
         self.parlamentar_raw = parlamentar
         self.dataInicio = dataInicio
         self.dataFim = dataFim
@@ -33,6 +34,7 @@ class Parlamentar:
 
     def run(self):
         self.projetos = self._buscar_projetos()
+        self.dados = self._buscar_dados()
         self.eventos = self._buscar_eventos()
         self.votacoes = self._buscar_votacoes()
         self.historico = self._buscar_historico()
@@ -62,7 +64,12 @@ class Parlamentar:
         del(self.parlamentar_raw)
         gc.collect()
 
-    
+    def _buscar_dados(self): 
+        id= self.pid
+        endpoint = f"deputados/{id}"
+        dados = _acessar_api_camara(endpoint)
+        return(dados)
+
     def _buscar_projetos(self, extra_params={}):
         tipos_de_projetos = ['PDL', 'PEC', 'PL', 'PLP', 'PLV', #var 1,2
                              'VTS', #var 4
